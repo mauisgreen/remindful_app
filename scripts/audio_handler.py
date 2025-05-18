@@ -3,20 +3,20 @@ from audiorecorder import audiorecorder
 from pathlib import Path
 from datetime import datetime
 
+# Ensure the audio folder exists
 AUDIO_DIR = Path(__file__).resolve().parent.parent / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 def record_audio(key: str):
-    \"\"\"Uses a Streamlit audio recorder component to capture and save WAV data.\"\"\"
-    # Display recorder UI
+    """
+    Uses a Streamlit audio recorder component to capture and save WAV data.
+    """
+    # show the recorder widget
     wav_data = audiorecorder("▶️ Record", "⏹️ Stop", key=key)
     if wav_data:
-        filename = AUDIO_DIR / f\"recording_{key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav\"
-        # Write raw audio bytes to file
+        filename = AUDIO_DIR / f"recording_{key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
         with open(filename, "wb") as f:
             f.write(wav_data.tobytes())
-        st.success(f\"Saved recording to {filename.name}\")
+        st.success(f"Saved recording as {filename.name}")
         return filename
-    else:
-        st.info(\"Click record to start capturing audio.\")
-        return None
+    return None
