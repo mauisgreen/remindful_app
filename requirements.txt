@@ -1,5 +1,0 @@
-streamlit
-sounddevice
-soundfile
-pyttsx3
-rapidfuzz
