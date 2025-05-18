@@ -1,6 +1,5 @@
 streamlit
-sounddevice
-soundfile
+streamlit-audiorecorder
 pyttsx3
 rapidfuzz
 openai-whisper
