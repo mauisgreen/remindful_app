@@ -82,8 +82,9 @@ def immediate_recall_phase():
     st.header("Immediate Cued Recall (Voice)")
     for cue in study_words:
         st.write(f"🔉 Cue: {cue}")
-        if st.button(f"Record Answer for '{cue}'", key=f"rec_im_{cue}"):
-            audio_file = record_audio(duration_sec=10)
+        # This displays the in‐browser recorder and returns a WAV filepath when the user stops
+        audio_file = record_audio(key=f"imm_{cue}")
+        if audio_file:
             response = transcribe_audio(audio_file)
             st.session_state.responses_immediate[cue] = response
             st.success(f"Recorded: “{response}”")
@@ -106,8 +107,8 @@ def delayed_recall_phase():
     st.header("Delayed Cued Recall (Voice)")
     for cue in study_words:
         st.write(f"🔉 Cue: {cue}")
-        if st.button(f"Record Answer for '{cue}'", key=f"rec_del_{cue}"):
-            audio_file = record_audio(duration_sec=10)
+        audio_file = record_audio(key=f"del_{cue}")
+        if audio_file:
             response = transcribe_audio(audio_file)
             st.session_state.responses_delayed[cue] = response
             st.success(f"Recorded: “{response}”")
@@ -117,14 +118,6 @@ def delayed_recall_phase():
         st.subheader("Results")
         st.write(f"Immediate Recall: {score_imm} / {len(study_words)}")
         st.write(f"Delayed Recall: {score_del} / {len(study_words)}")
-        # update history
-        now = datetime.now().isoformat()
-        history.setdefault(user_id, {})[selected_version] = now
-        HISTORY_PATH.write_text(json.dumps(history, indent=2))
-        # optional transcription of distraction audio
-        if "last_audio" in st.session_state and st.button("Transcribe Distraction Audio"):
-            transcript = transcribe_audio(Path(st.session_state.last_audio))
-            st.text_area("Distraction Transcript", transcript, height=200)
 
 if __name__ == "__main__":
     main()
