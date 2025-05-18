@@ -75,10 +75,17 @@ def study_phase():
         st.experimental_rerun()
 
 def immediate_recall_phase():
-    st.header("Immediate Cued Recall")
+    st.header("Immediate Cued Recall (Voice)")
     for cue in study_words:
-        key = f"imm_{cue}"
-        st.session_state.responses_immediate[cue] = st.text_input(f"What was the {cue}?", key=key)
+        st.write(f"🔉 Cue: {cue}")
+        # A Record button for each cue
+        if st.button(f"Record Answer for '{cue}'", key=f"rec_im_{cue}"):
+            # Record ~10 s, then run Whisper transcription
+            audio_file = record_audio(duration_sec=10)
+            response = transcribe_audio(audio_file)
+            # Store the transcribed text
+            st.session_state.responses_immediate[cue] = response
+            st.success(f"Recorded: “{response}”")
     if st.button("Start Distraction Task"):
         st.session_state.phase = "distract"
         st.experimental_rerun()
@@ -95,20 +102,24 @@ def distraction_phase():
         st.experimental_rerun()
 
 def delayed_recall_phase():
-    st.header("Delayed Cued Recall")
+    st.header("Delayed Cued Recall (Voice)")
     for cue in study_words:
-        key = f"del_{cue}"
-        st.session_state.responses_delayed[cue] = st.text_input(f"What was the {cue}? (Delayed)", key=key)
+        st.write(f"🔉 Cue: {cue}")
+        if st.button(f"Record Answer for '{cue}'", key=f"rec_del_{cue}"):
+            audio_file = record_audio(duration_sec=10)
+            response = transcribe_audio(audio_file)
+            st.session_state.responses_delayed[cue] = response
+            st.success(f"Recorded: “{response}”")
     if st.button("See Results"):
-        score_imm, details_imm = score_responses(study_words, st.session_state.responses_immediate)
-        score_del, details_del = score_responses(study_words, st.session_state.responses_delayed)
+        score_imm, _ = score_responses(study_words, st.session_state.responses_immediate)
+        score_del, _ = score_responses(study_words, st.session_state.responses_delayed)
         st.subheader("Results")
         st.write(f"Immediate Recall: {score_imm} / {len(study_words)}")
         st.write(f"Delayed Recall: {score_del} / {len(study_words)}")
-        if "last_audio" in st.session_state:
-            if st.button("Transcribe Distraction Audio"):
-                transcript = transcribe_audio(Path(st.session_state.last_audio))
-                st.text_area("Distraction Transcript", transcript)
+        # Optional: let the user listen back or view transcript of the distraction phase
+        if "last_audio" in st.session_state and st.button("Transcribe Distraction Audio"):
+            transcript = transcribe_audio(Path(st.session_state.last_audio))
+            st.text_area("Distraction Transcript", transcript, height=200)
 
 if __name__ == "__main__":
     main()
