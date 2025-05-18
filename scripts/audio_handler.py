@@ -1,15 +1,22 @@
-import sounddevice as sd
-import soundfile as sf
-from datetime import datetime
+import streamlit as st
+from audiorecorder import audiorecorder
 from pathlib import Path
+from datetime import datetime
 
 AUDIO_DIR = Path(__file__).resolve().parent.parent / "audio"
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-def record_audio(duration_sec=60, sample_rate=44100):
-    """Records audio from default mic and saves to WAV file."""
-    AUDIO_DIR.mkdir(exist_ok=True, parents=True)
-    filename = AUDIO_DIR / f"distraction_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
-    recording = sd.rec(int(duration_sec * sample_rate), samplerate=sample_rate, channels=1)
-    sd.wait()
-    sf.write(str(filename), recording, sample_rate)
-    return filename
+def record_audio(key: str):
+    \"\"\"Uses a Streamlit audio recorder component to capture and save WAV data.\"\"\"
+    # Display recorder UI
+    wav_data = audiorecorder("▶️ Record", "⏹️ Stop", key=key)
+    if wav_data:
+        filename = AUDIO_DIR / f\"recording_{key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav\"
+        # Write raw audio bytes to file
+        with open(filename, "wb") as f:
+            f.write(wav_data.tobytes())
+        st.success(f\"Saved recording to {filename.name}\")
+        return filename
+    else:
+        st.info(\"Click record to start capturing audio.\")
+        return None
