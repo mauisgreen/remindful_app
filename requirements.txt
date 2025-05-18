@@ -1,0 +1,6 @@
+streamlit
+sounddevice
+soundfile
+pyttsx3
+rapidfuzz
+openai-whisper
