@@ -1,20 +1,55 @@
 import streamlit as st
 from pathlib import Path
+import json
+from datetime import datetime
 from scripts.scoring import score_responses
-from scripts.timer import countdown
+from scripts.timer   import countdown
 from scripts.audio_handler import record_audio
-from scripts.tts_stt import speak_text, transcribe_audio
+from scripts.tts_stt  import transcribe_audio
 
-# Update with your full 16-item list
-study_words = {
-    "fruit": "apple",
-    "vehicle": "truck",
-    "furniture": "couch"
-}
+# — SETUP PATHS ————————————————————————————————————————
+BASE_DIR     = Path(__file__).parent
+TESTS_DIR    = BASE_DIR / "tests"
+DATA_DIR     = BASE_DIR.parent / "data"
+HISTORY_PATH = DATA_DIR / "history.json"
+DATA_DIR.mkdir(exist_ok=True)
 
-def main():
-    st.title("Remindful Memory Test")
-    # Initialize session state
+# — USER IDENTIFICATION ——————————————————————————————————
+if "user_id" not in st.session_state:
+    uid = st.text_input("Enter your User ID or initials", "")
+    if not uid:
+        st.stop()
+    st.session_state.user_id = uid
+
+user_id = st.session_state.user_id
+
+# — LOAD VERSIONS & HISTORY —————————————————————————————
+versions = sorted(p.stem for p in TESTS_DIR.glob("*.json"))
+history  = {}
+if HISTORY_PATH.exists():
+    try:
+        history = json.loads(HISTORY_PATH.read_text())
+    except:
+        history = {}
+
+user_history = history.get(user_id, {})
+
+# — PICK NEXT VERSION ————————————————————————————————————
+epoch = datetime.fromisoformat("1970-01-01T00:00:00")
+version_dates = {}
+for v in versions:
+    ts = user_history.get(v, "1970-01-01T00:00:00")
+    dt = datetime.fromisoformat(ts)
+    version_dates[v] = dt
+
+selected_version = min(version_dates, key=version_dates.get)
+
+# — LOAD STUDY WORDS ————————————————————————————————————
+with open(TESTS_DIR / f"{selected_version}.json") as f:
+    study_words = json.load(f)
+
+st.title("Remindful Memory Test")
+st.write(f"**Test Version:** {selected_version}")
     if "phase" not in st.session_state:
         st.session_state.phase = "study"
     if "responses_immediate" not in st.session_state:
