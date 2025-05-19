@@ -72,51 +72,41 @@ def introduction():
         st.experimental_rerun()
 
 def controlled_learning():
-    if not st.session_state.get("started"): return
-    st.header("Controlled Learning")
-    # We assume `study_words` is an OrderedDict or list of sheets (4 items each)
-    sheet_index = st.session_state.get("sheet_index", 0)
-    sheet = study_words_sheets[sheet_index]  # e.g. a list of 4 (cue, word) pairs
-    correct = st.session_state.setdefault("sheet_correct", {i:False for i in range(len(sheet))})
-    for i, (cue, word) in enumerate(sheet):
-        st.write(f"🔍 Cue: {cue}")
-        if not correct[i] and st.button(f"Respond (Sheet {sheet_index+1}, Item {i+1})", key=f"learn_{sheet_index}_{i}"):
-            # record_audio & transcribe_audio could be used here if you want voice during learning
-            response = word  # in FCSRT you simply point/read back, so we assume correct
-            correct[i] = True
+    st.header("Controlled Learning (4 items at a time)")
+    idx = st.session_state.get("sheet_index", 0)
+    sheet = study_sheets[idx]
+
+    # Track which items you’ve confirmed on this sheet
+    correct = st.session_state.setdefault(f"sheet_{idx}_correct",
+                                          {cue: False for cue in sheet})
+    for cue, word in sheet.items():
+        st.write(f"🔍 {cue}")
+        if not correct[cue] and st.button(f"Reveal & Confirm “{word}”",
+                                          key=f"learn_{idx}_{cue}"):
+            correct[cue] = True
+            st.success(f"You confirmed: {word}")
+
+    # Once all four are done, advance to the next sheet or phase
     if all(correct.values()):
-        # move to next sheet
-        st.session_state.sheet_index = sheet_index + 1
-        if st.session_state.sheet_index >= len(study_words_sheets):
-            st.session_state.phase = "immediate"
-        else:
-            st.session_state.sheet_correct = {i:False for i in range(len(sheet))}
+        st.session_state.sheet_index = idx + 1
+        if st.session_state.sheet_index >= len(study_sheets):
+            st.session_state.phase = "immediate_cued"  # next FCSRT phase
         st.experimental_rerun()
 
-def immediate_cued_recall():
-    if st.session_state.phase != "immediate": return
-    st.header("Immediate Cued Recall")
-    misses = []
-    for cue, word in study_words.items():
-        st.write(f"❓ Cue: {cue}")
-        if st.button(f"Answer '{cue}'", key=f"imm_{cue}"):
-            audio_file = record_audio(key=f"imm_{cue}")
+
+def immediate_recall_phase():
+    st.header("Immediate Cued Recall (Voice)")
+    for cue in study_words:
+        st.write(f"🔉 Cue: {cue}")
+        # Record & transcribe in one line
+        audio_file = record_audio(key=f"imm_{cue}")
+        if audio_file:
             resp = transcribe_audio(audio_file)
-            if resp.lower().strip() != word.lower():
-                # remind if wrong
-                st.info(f"The {cue} was {word}. What was the {cue}?")
-                misses.append((cue, word))
-            else:
-                st.success("Correct!")
-    if not misses:
-        st.session_state.phase = "interference"
-        st.experimental_rerun()
-    else:
-        # re-test misses immediately
-        for cue, word in misses:
-            audio_file = record_audio(key=f"remind_{cue}")
-            _ = transcribe_audio(audio_file)
-        st.session_state.phase = "interference"
+            # Save it for scoring
+            st.session_state.responses_immediate[cue] = resp
+            st.success(f"Recorded: “{resp}”")
+    if st.button("Start Distraction Task"):
+        st.session_state.phase = "distract"
         st.experimental_rerun()
 
 def interference_phase():
@@ -129,36 +119,73 @@ def interference_phase():
         st.experimental_rerun()
 
 def free_recall_phase():
-    if st.session_state.phase != "free_recall": return
     st.header("Free Recall (90 s)")
-    transcript = st.text_area("Say all words you remember (transcription):", value="")
+    # Record one chunk for free recall
+    free_audio = record_audio(key="free_recall")
+    if free_audio:
+        # Split into individual “words” for easy matching later
+        free_text = transcribe_audio(free_audio)
+        st.session_state.free_transcript = free_text.split()
+        st.write("You said:", st.session_state.free_transcript)
     if st.button("Done Free Recall"):
-        st.session_state.free_transcript = transcript.split()
         st.session_state.phase = "cued_recall"
         st.experimental_rerun()
 
 def cued_recall_phase():
-    if st.session_state.phase != "cued_recall": return
     st.header("Cued Recall")
-    not_recalled = [w for w in study_words.values() if w not in st.session_state.free_transcript]
-    for cue, word in study_words.items():
-        if word in not_recalled:
-            st.write(f"❓ Cue: {cue}")
-            if st.button(f"Answer '{cue}'", key=f"cue_{cue}"):
-                audio_file = record_audio(key=f"cue_{cue}")
-                resp = transcribe_audio(audio_file)
-                _ = resp  # record under st.session_state.cued_responses[cue] = resp
-    st.session_state.phase = "results"
-    st.experimental_rerun()
+    # Figure out which words they missed
+    missed = {cue: word for cue, word in study_words.items()
+              if word not in st.session_state.free_transcript}
+    # Loop just those
+    for cue, word in missed.items():
+        st.write(f"🔉 Cue: {cue}")
+        audio_file = record_audio(key=f"cue_{cue}")
+        if audio_file:
+            resp = transcribe_audio(audio_file)
+            # Save for scoring
+            st.session_state.responses_cued = st.session_state.get("responses_cued", {})
+            st.session_state.responses_cued[cue] = resp
+            st.success(f"Recorded: “{resp}”")
+    if st.button("See Results"):
+        st.session_state.phase = "results"
+        st.experimental_rerun()
 
 def show_results():
-    if st.session_state.phase != "results": return
-    st.header("Results")
-        score_imm, _ = score_responses(study_words, st.session_state.responses_immediate)
-        score_del, _ = score_responses(study_words, st.session_state.responses_delayed)
-        st.subheader("Results")
-        st.write(f"Immediate Recall: {score_imm} / {len(study_words)}")
-        st.write(f"Delayed Recall: {score_del} / {len(study_words)}")
+    if st.session_state.phase != "results":
+        return
+
+    # 1. Immediate Cued Recall (16 points)
+    imm_score, _ = score_responses(
+        study_words,
+        st.session_state.responses_immediate
+    )
+
+    # 2. Free Recall (16 points)
+    free_list = st.session_state.get("free_transcript", [])
+    free_norm = {w.lower() for w in free_list}
+    free_score = sum(
+        1 for word in study_words.values()
+        if word.lower() in free_norm
+    )
+
+    # 3. Cued Recall (16 points) for words missed in free recall
+    missed = {
+        cue: word
+        for cue, word in study_words.items()
+        if word.lower() not in free_norm
+    }
+    cued_resps = st.session_state.get("responses_cued", {})
+    cued_score = sum(
+        1
+        for cue, word in missed.items()
+        if cued_resps.get(cue, "").lower().strip() == word.lower()
+    )
+
+    # Total out of 48
+    total = imm_score + free_score + cued_score
+
+    st.header("Final Score")
+    st.write(f"🎉 Your total Remindful score is **{total} / 48**")
 
 if __name__ == "__main__":
     main()
