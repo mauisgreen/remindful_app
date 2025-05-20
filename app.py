@@ -98,26 +98,35 @@ def controlled_learning():
     cue       = cues[st.session_state["item_index"]]
     target    = sheet[cue]
 
-    # 1) Speak & display cue
-    speak_text(f"Category: {cue}. Please say the associated word.")
+    st.header(f"Controlled Learning — Sheet {sheet_idx+1} of {len(study_sheets)}")
+
+    # 1) Announce the cue
+    speak_text(f"Category: {cue}. Say the word aloud, then click it below.")
     st.write(f"🔊 **Category:** {cue}")
 
-    # 2) Record & check
-    audio_f = record_audio(key=f"learn_{sheet_idx}_{cue}")
-    if audio_f:
-        resp = transcribe_audio(audio_f).strip().lower()
-        st.write(f"**You said:** {resp}")
-        if resp == target.lower():
+    # 2) Show the four words as clickable options
+    choice = st.radio("Click the word you just said:", list(sheet.values()), key=f"sel_{sheet_idx}_{cue}")
+
+    # 3) When they click Confirm, record audio (for research) and check their click
+    if st.button("Confirm Selection", key=f"confirm_{sheet_idx}_{cue}"):
+        # record their speech for later transcription
+        audio_f = record_audio(key=f"learn_{sheet_idx}_{cue}")
+        if choice == target:
             st.success("✅ Correct!")
-            # next item in sheet
+            # advance within sheet or move to next phase
             st.session_state["item_index"] += 1
-            # if that was the last of 4, move to immediate recall for this sheet
             if st.session_state["item_index"] >= len(cues):
+                # reset item pointer
                 st.session_state["item_index"] = 0
-                st.session_state["phase"]      = "immediate"
-            return
+                # go to immediate recall if that was the last sheet
+                if sheet_idx + 1 >= len(study_sheets):
+                    st.session_state["phase"] = "immediate"
+                else:
+                    # otherwise move to next sheet
+                    st.session_state["sheet_index"] += 1
+            st.experimental_rerun()
         else:
-            st.error(f"❌ Not quite. It was **{target}**. Let’s try again.")
+            st.error(f"❌ That’s not the right word. The correct answer was **{target}**. Try again.")
 
 def immediate_cued_recall():
     if st.session_state["phase"] != "immediate":
