@@ -75,15 +75,20 @@ def main():
         show_results()
 
 def introduction():
+    # only run when we’re in the intro phase
+    if st.session_state["phase"] != "introduction":
+        return
+
     st.header("Introduction")
     st.write(
-        "In this exercise you’ll learn 16 words, each tied     to its own category. "
+        "In this exercise you’ll learn 16 words, each tied to its own category. "
         "I’ll say each category aloud; you then speak the matching word. "
         "After learning, you’ll do three recall trials."
     )
     if st.button("Begin Learning"):
         st.session_state["phase"] = "controlled"
-        st.experimental_rerun()
+        # no need to call experimental_rerun—Streamlit will rerun on any widget click
+        return
 
 def controlled_learning():
     if st.session_state["phase"] != "controlled":
