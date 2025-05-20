@@ -49,19 +49,16 @@ with open(TESTS_DIR / f"{selected_version}.json") as f:
     study_sheets = chunk_dict(study_words, 4)
 
 # — MAIN APP ————————————————————————————————————————
-# after study_sheets = chunk_dict(...)
 if "phase" not in st.session_state:
-    st.session_state.phase = "introduction"
-    st.session_state.sheet_index = 0
-    st.session_state.item_index  = 0
-    st.session_state.responses_immediate = {}
-    st.session_state.free_transcript     = []
-    st.session_state.responses_cued      = {}
+    st.session_state["phase"]               = "introduction"
+    st.session_state["sheet_index"]         = 0
+    st.session_state["item_index"]          = 0
+    st.session_state["responses_immediate"] = {}
+    st.session_state["free_transcript"]     = []
+    st.session_state["responses_cued"]      = {}
 
 def main():
-    st.title("Remindful Test")
-    phase = st.session_state.phase
-
+    phase = st.session_state["phase"]
     if phase == "introduction":
         introduction()
     elif phase == "controlled":
@@ -80,31 +77,30 @@ def main():
 def introduction():
     st.header("Introduction")
     st.write(
-        "In this exercise you’ll learn 16 words, each tied to its own category. "
+        "In this exercise you’ll learn 16 words, each tied     to its own category. "
         "I’ll say each category aloud; you then speak the matching word. "
         "After learning, you’ll do three recall trials."
     )
     if st.button("Begin Learning"):
-        st.session_state.phase = "controlled"
+        st.session_state["phase"] = "controlled"
         st.experimental_rerun()
 
 def controlled_learning():
-    if st.session_state.phase != "controlled":
+    if st.session_state["phase"] != "controlled":
         return
 
-    st.header("Controlled Learning (one item at a time)")
+    st.header("Controlled Learning")
 
-    idx    = st.session_state.sheet_index
-    pos    = st.session_state.item_index
+    idx    = st.session_state["sheet_index"]
+    pos    = st.session_state["item_index"]
     sheet  = study_sheets[idx]
     cues   = list(sheet.keys())
     cue    = cues[pos]
     target = sheet[cue]
 
-    # Speak & show the category cue
+    # Speak the cue automatically
+    speak_text(f"Category: {cue}. Please say the associated word.")
     st.write(f"🔊 **Category:** {cue}")
-    if st.button("▶️ Hear cue again", key=f"speak_{idx}_{pos}"):
-        speak_text(f"Category: {cue}. Please say the associated word.")
 
     # Record & transcribe
     audio_file = record_audio(key=f"learn_{idx}_{pos}")
@@ -112,25 +108,23 @@ def controlled_learning():
         resp = transcribe_audio(audio_file).strip().lower()
         st.write(f"**You said:** {resp}")
 
-        # Only advance when correct
         if resp == target.lower():
             st.success("✅ Correct!")
-            # next item or sheet
+            # Next item or sheet
             if pos + 1 < len(cues):
-                st.session_state.item_index += 1
+                st.session_state["item_index"] += 1
             else:
-                st.session_state.sheet_index += 1
-                st.session_state.item_index = 0
-                # if that was the last sheet, move on
-                if st.session_state.sheet_index >= len(study_sheets):
-                    st.session_state.phase = "immediate"
+                st.session_state["sheet_index"] += 1
+                st.session_state["item_index"] = 0
+                if st.session_state["sheet_index"] >= len(study_sheets):
+                    st.session_state["phase"] = "immediate"
             st.experimental_rerun()
         else:
-            st.error(f"❌ That’s not right. The correct word is **{target}**. Try again.")
+            st.error(f"❌ That’s not right. It was **{target}**. Let’s try again.")
 
 
 def immediate_cued_recall():
-    if st.session_state.phase != "immediate":
+    if st.session_state["phase"] != "immediate":
         return
 
     st.header("Immediate Cued Recall (Voice)")
@@ -139,11 +133,11 @@ def immediate_cued_recall():
         audio_file = record_audio(key=f"imm_{cue}")
         if audio_file:
             resp = transcribe_audio(audio_file)
-            st.session_state.responses_immediate[cue] = resp
+            st.session_state["responses_immediate"][cue] = resp
             st.success(f"Recorded: “{resp}”")
 
     if st.button("Start Distraction Task"):
-        st.session_state.phase = "interference"   # was "distract"
+        st.session_state["phase"] = "interference"
         st.experimental_rerun()
 
 def interference_phase():
