@@ -3,3 +3,4 @@ streamlit-audiorecorder
 pyttsx3
 rapidfuzz
 openai-whisper
+ffmpeg
