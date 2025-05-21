@@ -33,15 +33,3 @@ def record_audio(key: str):
         return filename
     return None
 """
-
-# Write the file
-file_path = scripts_dir / "audio_handler.py"
-file_path.write_text(audio_handler_code.strip())
-
-file_path
-
-
-path = Path("/mnt/data/remindful_app/scripts/audio_handler.py")
-path.write_text(audio_handler_code.strip())
-
-path
