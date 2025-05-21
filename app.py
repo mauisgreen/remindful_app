@@ -24,7 +24,7 @@ if "user_id" not in st.session_state:
     # 2) Intro blurb
     st.write(
         "Welcome to Remindful! \n"
-        "This tool will guide you through a 16-word memory test based on the FCSRT-IR protocol. \n"
+        "This tool will guide you through a 16-word memory test based on a reliable protocol meant to capture early signs of memory problems.\n"
         "Please enter your unique user ID or initials below to get started."
     )
     # 3) Input box
@@ -101,52 +101,44 @@ def introduction():
     if st.button("Begin Learning"):
         st.session_state["phase"] = "controlled"
 
-def controlled_learning():
-    if st.session_state["phase"] != "controlled":
-        return
+# 1) Display the cue in big text
+    st.markdown(f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
+                unsafe_allow_html=True)
 
-    sheet_idx = st.session_state["sheet_index"]
-    sheet     = study_sheets[sheet_idx]
-    cues      = list(sheet.keys())
-    cue       = cues[st.session_state["item_index"]]
-    target    = sheet[cue]
-
-    st.header(f"Controlled Learning — Sheet {sheet_idx+1} of {len(study_sheets)}")
-
-    # 1) Browser TTS of the cue
+    # 2) Browser TTS of the cue
     components.html(
         f"""
         <script>
-          const msg = new SpeechSynthesisUtterance("{cue}");
+          const msg = new SpeechSynthesisUtterance("The cue is {cue}");
           window.speechSynthesis.speak(msg);
         </script>
         """,
         height=0,
     )
 
-    # 2) Persistent Record widget (▶️ Record / ⏹️ Stop)
+    # 3) Persistent Record widget (▶️ Record / ⏹️ Stop)
     audio_file = record_audio(key=f"learn_{sheet_idx}_{cue}")
     if audio_file:
         st.success("✅ Audio recorded for research")
 
-    # 3) Show the four words in VERY LARGE font
+    # 4) Show the four words in VERY LARGE font
     for word in sheet.values():
         st.markdown(
             f'<div style="font-size:48px; margin:8px 0; text-align:center;">{word}</div>',
             unsafe_allow_html=True
         )
 
-    # 4) Let them select which word they just said
+    # 5) Let them select which word they just said
     choice = st.radio(
         "Select the word you just said:",
         list(sheet.values()),
         key=f"sel_{sheet_idx}"
     )
 
-    # 5) Confirm button to check their click
+    # 6) Confirm button to check their click
     if st.button("Confirm Selection", key=f"conf_{sheet_idx}_{cue}"):
         if choice == target:
-            st.success("Correct!")
+            st.success("🎉 Correct!")
             # move to next item
             st.session_state["item_index"] += 1
             if st.session_state["item_index"] >= len(cues):
