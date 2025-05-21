@@ -108,6 +108,7 @@ def controlled_learning():
     sheet     = study_sheets[sheet_idx]
     cues      = list(sheet.keys())
     cue       = cues[st.session_state["item_index"]]
+    target    = sheet[cue]
 
     # Display the cue here, not in introduction
     st.markdown(
