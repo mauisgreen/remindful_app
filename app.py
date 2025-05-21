@@ -16,7 +16,6 @@ DATA_DIR = BASE_DIR.parent / "data"
 HISTORY_PATH = DATA_DIR / "history.json"
 DATA_DIR.mkdir(exist_ok=True)
 
-# — USER IDENTIFICATION ——————————————————————————————————
 # — USER IDENTIFICATION / LOGIN PAGE ——————————————————————————————————
 if "user_id" not in st.session_state:
     # 1) Page title
