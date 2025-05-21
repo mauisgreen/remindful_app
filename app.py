@@ -104,13 +104,14 @@ def controlled_learning():
     if st.session_state["phase"] != "controlled":
         return
 
-    sheet_idx = st.session_state["sheet_index"]
-    sheet     = study_sheets[sheet_idx]
+    idx       = st.session_state["sheet_index"]
+    sheet     = study_sheets[idx]
     cues      = list(sheet.keys())
     cue       = cues[st.session_state["item_index"]]
     target    = sheet[cue]
 
-    # Display the cue here, not in introduction
+    # Title and Cue
+    st.header(f"Controlled Learning — Sheet {idx+1} of {len(study_sheets)}")
     st.markdown(
         f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
         unsafe_allow_html=True
@@ -127,42 +128,40 @@ def controlled_learning():
         height=0,
     )
 
-    # 3) Persistent Record widget (▶️ Record / ⏹️ Stop)
-    audio_file = record_audio(key=f"learn_{sheet_idx}_{cue}")
-    if audio_file:
-        st.success("✅ Audio recorded for research")
+    # 2×2 grid of words in large font
+    words = list(sheet.values())
+    cols = st.columns(2)
+    for i, word in enumerate(words):
+        with cols[i % 2]:
+            if st.button(
+                f"<div style='font-size:48px; padding:16px;'>{word}</div>",
+                key=f"sel_{idx}_{i}",
+                unsafe_allow_html=True
+            ):
+                # When tapped, record audio and transcribe
+                try:
+                    audio_file = record_audio(key=f"learn_{idx}_{cue}_{i}")
+                    if audio_file:
+                        resp = transcribe_audio(audio_file).strip().lower()
+                        st.write(f"**You said:** {resp}")
+                except Exception as e:
+                    st.warning(f"Audio error: {e}")
 
-    # 4) Show the four words in VERY LARGE font
-    for word in sheet.values():
-        st.markdown(
-            f'<div style="font-size:48px; margin:8px 0; text-align:center;">{word}</div>',
-            unsafe_allow_html=True
-        )
-
-    # 5) Let them select which word they just said
-    choice = st.radio(
-        "Select the word you just said:",
-        list(sheet.values()),
-        key=f"sel_{sheet_idx}"
-    )
-
-    # 6) Confirm button to check their click
-    if st.button("Confirm Selection", key=f"conf_{sheet_idx}_{cue}"):
-        if choice == target:
-            st.success("🎉 Correct!")
-            # move to next item
-            st.session_state["item_index"] += 1
-            if st.session_state["item_index"] >= len(cues):
-                # finished this sheet
-                st.session_state["item_index"] = 0
-                # advance phase
-                if sheet_idx + 1 >= len(study_sheets):
-                    st.session_state["phase"] = "immediate"
+                # Check the click
+                if word == target:
+                    st.success("✅ Correct!")
+                    # advance item or sheet
+                    if st.session_state["item_index"] + 1 < len(cues):
+                        st.session_state["item_index"] += 1
+                    else:
+                        st.session_state["item_index"] = 0
+                        if idx + 1 < len(study_sheets):
+                            st.session_state["sheet_index"] += 1
+                        else:
+                            st.session_state["phase"] = "immediate"
+                    st.experimental_rerun()
                 else:
-                    st.session_state["sheet_index"] += 1
-            st.experimental_rerun()
-        else:
-            st.error(f"❌ Not quite—“{target}” was the right word. Let’s try that cue again.")
+                    st.error(f"❌ That’s not right—the correct word was **{target}**.")
 
 def immediate_cued_recall():
     if st.session_state["phase"] != "immediate":
