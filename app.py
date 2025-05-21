@@ -7,6 +7,7 @@ from scripts.timer        import countdown, countdown_seconds
 from scripts.audio_handler import record_audio
 from scripts.tts_stt       import speak_text, transcribe_audio
 from scripts.helpers      import chunk_dict
+import streamlit.components.v1 as components
 
 # — SETUP PATHS ————————————————————————————————————————
 BASE_DIR = Path(__file__).parent
@@ -16,13 +17,25 @@ HISTORY_PATH = DATA_DIR / "history.json"
 DATA_DIR.mkdir(exist_ok=True)
 
 # — USER IDENTIFICATION ——————————————————————————————————
+# — USER IDENTIFICATION / LOGIN PAGE ——————————————————————————————————
 if "user_id" not in st.session_state:
-    uid = st.text_input("Enter your User ID or initials", "")
+    # 1) Page title
+    st.markdown("Remindful Memory Assessment")
+    # 2) Intro blurb
+    st.write(
+        "Welcome to Remindful! \n"
+        "This tool will guide you through a 16-word memory test based on the FCSRT-IR protocol. \n"
+        "Please enter your unique user ID or initials below to get started."
+    )
+    # 3) Input box
+    uid = st.text_input("User ID or initials", "")
+    # 4) Halt until they type something
     if not uid:
         st.stop()
-    st.session_state.user_id = uid
+    st.session_state["user_id"] = uid
 
-user_id = st.session_state.user_id
+user_id = st.session_state["user_id"]
+
 
 # — LOAD VERSIONS & HISTORY —————————————————————————————
 versions = sorted(p.stem for p in TESTS_DIR.glob("*.json"))
@@ -100,33 +113,53 @@ def controlled_learning():
 
     st.header(f"Controlled Learning — Sheet {sheet_idx+1} of {len(study_sheets)}")
 
-    # 1) Announce the cue
-    speak_text(f"Category: {cue}. Say the word aloud, then click it below.")
-    st.write(f"🔊 **Category:** {cue}")
+    # 1) Browser TTS of the cue
+    components.html(
+        f"""
+        <script>
+          const msg = new SpeechSynthesisUtterance("{cue}");
+          window.speechSynthesis.speak(msg);
+        </script>
+        """,
+        height=0,
+    )
 
-    # 2) Show the four words as clickable options
-    choice = st.radio("Click the word you just said:", list(sheet.values()), key=f"sel_{sheet_idx}_{cue}")
+    # 2) Persistent Record widget (▶️ Record / ⏹️ Stop)
+    audio_file = record_audio(key=f"learn_{sheet_idx}_{cue}")
+    if audio_file:
+        st.success("✅ Audio recorded for research")
 
-    # 3) When they click Confirm, record audio (for research) and check their click
-    if st.button("Confirm Selection", key=f"confirm_{sheet_idx}_{cue}"):
-        # record their speech for later transcription
-        audio_f = record_audio(key=f"learn_{sheet_idx}_{cue}")
+    # 3) Show the four words in VERY LARGE font
+    for word in sheet.values():
+        st.markdown(
+            f'<div style="font-size:48px; margin:8px 0; text-align:center;">{word}</div>',
+            unsafe_allow_html=True
+        )
+
+    # 4) Let them select which word they just said
+    choice = st.radio(
+        "Select the word you just said:",
+        list(sheet.values()),
+        key=f"sel_{sheet_idx}"
+    )
+
+    # 5) Confirm button to check their click
+    if st.button("Confirm Selection", key=f"conf_{sheet_idx}_{cue}"):
         if choice == target:
-            st.success("✅ Correct!")
-            # advance within sheet or move to next phase
+            st.success("Correct!")
+            # move to next item
             st.session_state["item_index"] += 1
             if st.session_state["item_index"] >= len(cues):
-                # reset item pointer
+                # finished this sheet
                 st.session_state["item_index"] = 0
-                # go to immediate recall if that was the last sheet
+                # advance phase
                 if sheet_idx + 1 >= len(study_sheets):
                     st.session_state["phase"] = "immediate"
                 else:
-                    # otherwise move to next sheet
                     st.session_state["sheet_index"] += 1
             st.experimental_rerun()
         else:
-            st.error(f"❌ That’s not the right word. The correct answer was **{target}**. Try again.")
+            st.error(f"❌ Not quite—“{target}” was the right word. Let’s try that cue again.")
 
 def immediate_cued_recall():
     if st.session_state["phase"] != "immediate":
