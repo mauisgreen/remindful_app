@@ -104,119 +104,105 @@ def controlled_learning():
     if st.session_state["phase"] != "controlled":
         return
 
-    # State
-    sheet_idx = st.session_state["sheet_index"]
-    item_idx  = st.session_state["item_index"]
-    sheet     = study_sheets[sheet_idx]
-    cues      = list(sheet.keys())
-    cue       = cues[item_idx]
-    target    = sheet[cue]
+    # Current sheet & item
+    idx      = st.session_state["sheet_index"]
+    item_idx = st.session_state["item_index"]
+    sheet    = study_sheets[idx]
+    cues     = list(sheet.keys())
+    cue      = cues[item_idx]
+    target   = sheet[cue]
 
-    # Header + Cue
-    st.header(f"Controlled Learning — Sheet {sheet_idx+1} of {len(study_sheets)}")
-    st.markdown(f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
-                unsafe_allow_html=True)
-
+    # Header + Cue display
+    st.header(f"Controlled Learning — Sheet {idx+1} of {len(study_sheets)}")
+    st.markdown(
+        f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
+        unsafe_allow_html=True
+    )
     # Browser TTS
-    components.html(f"""
-      <script>
-        const msg = new SpeechSynthesisUtterance("The category is {cue}");
-        window.speechSynthesis.speak(msg);
-      </script>
-    """, height=0)
+    components.html(
+        f"""
+        <script>
+          const msg = new SpeechSynthesisUtterance("The cue is {cue}");
+          window.speechSynthesis.speak(msg);
+        </script>
+        """,
+        height=0,
+    )
 
-    # 2×2 grid
+    # 2×2 grid of words
     words = list(sheet.values())
-    cols = st.columns(2)
+    cols  = st.columns(2)
     for i, word in enumerate(words):
         with cols[i % 2]:
             st.markdown(
                 f"<div style='font-size:48px; padding:12px; text-align:center;'>{word}</div>",
                 unsafe_allow_html=True
             )
-            # Each word gets its own button
-            if st.button("Select", key=f"sel_{sheet_idx}_{item_idx}_{i}"):
+            if st.button("Select", key=f"controlled_{idx}_{item_idx}_{i}"):
                 # 1) Record & transcribe
-                try:
-                    audio_f = record_audio(key=f"learn_{sheet_idx}_{cue}_{i}")
-                    resp    = transcribe_audio(audio_f).strip().lower() if audio_f else ""
+                audio_f = record_audio(key=f"learn_{idx}_{cue}_{i}")
+                if audio_f:
+                    resp = transcribe_audio(audio_f).strip().lower()
                     st.write(f"**You said:** {resp}")
-                except Exception as e:
-                    st.warning(f"Audio error: {e}")
 
-                # 2) Was the click correct?
+                # 2) Check click
                 if word == target:
                     st.success("✅ Correct!")
-                    # Advance to next item or phase
+                    # advance to next item (or into Immediate Recall if that was the last)
                     st.session_state["item_index"] += 1
                     if st.session_state["item_index"] >= len(cues):
-                        # finished this sheet
-                        st.session_state["item_index"] = 0
-                        if sheet_idx + 1 < len(study_sheets):
-                            st.session_state["sheet_index"] += 1
-                        else:
-                            st.session_state["phase"] = "immediate"
-                    return  # exit so Streamlit reruns with new state
+                        st.session_state["phase"] = "immediate"
+                    return  # let Streamlit rerun with new state
                 else:
-                    st.error(f"❌ Nope—correct word was **{target}**.")
-                    return  # exit so they see the error before retrying
+                    st.error(f"❌ Not quite—correct word was **{target}**.")
+                    return
 
 def immediate_cued_recall():
-    if st.session_state["phase"] != "immediate":
+    if st.session_state.phase != "immediate":
         return
 
-    sheet_idx = st.session_state["sheet_index"]
-    sheet     = study_sheets[sheet_idx]
-    # one dict per sheet tracking which cues are done
-    flags = st.session_state["imm_correct"].setdefault(
-        sheet_idx, {cue: False for cue in sheet}
+    idx   = st.session_state["sheet_index"]
+    sheet = study_sheets[idx]
+    flags = st.session_state.setdefault("imm_correct", {}).setdefault(
+        idx, {cue: False for cue in sheet}
     )
 
-    # Find the next cue not yet flagged
+    # find the next cue to test
     for cue, word in sheet.items():
         if not flags[cue]:
             st.write(f"🔉 Cue: {cue}")
-
-            # 1) First pass recording
-            audio_f = record_audio(key=f"imm1_{sheet_idx}_{cue}")
-            if audio_f:
+            audio = record_audio(key=f"imm1_{idx}_{cue}")
+            if audio:
                 try:
-                    resp = transcribe_audio(audio_f).strip().lower()
-                except Exception as e:
-                    st.warning(f"Transcription error: {e}")
-                    return  # bail so user can retry
+                    resp = transcribe_audio(audio).strip().lower()
+                except:
+                    st.warning("Transcription failed, please try again.")
+                    return
                 if resp == word.lower():
                     st.success("✅ Correct!")
                     flags[cue] = True
                 else:
-                    # 2) Remind & second-pass
+                    # remind and retry once
                     speak_text(f"The {cue} was {word}. What was the {cue}?")
-                    retry_f = record_audio(key=f"imm2_{sheet_idx}_{cue}")
-                    if retry_f:
-                        try:
-                            resp2 = transcribe_audio(retry_f).strip().lower()
-                        except Exception as e:
-                            st.warning(f"Transcription error: {e}")
-                            return
-                        if resp2 == word.lower():
-                            st.success("✅ Got it on retry!")
-                            flags[cue] = True
-                        else:
-                            st.error("Still not right—moving on.")
+                    retry = record_audio(key=f"imm2_{idx}_{cue}")
+                    if retry and transcribe_audio(retry).strip().lower() == word.lower():
+                        st.success("✅ Got it on retry!")
+                        flags[cue] = True
                     else:
-                        st.error("No retry audio—moving on.")
-            return  # exit so we only handle one cue per run
+                        st.error("Still not right—moving on.")
+            return  # exit so Streamlit reruns and we handle one cue at a time
 
-    # if we get here, all cues in this sheet are done
-    if sheet_idx + 1 < len(study_sheets):
-        # move to next sheet’s controlled learning
-        st.session_state["phase"]        = "controlled"
-        st.session_state["sheet_index"] += 1
-    else:
-        # finished all sheets → interference
-        st.session_state["phase"] = "interference"
-    # reset the item pointer (so the next phase starts fresh)
+    # if we reach here, all cues on this sheet have been tested
+    # advance to the *next* sheet
+    st.session_state["sheet_index"] += 1
+    # reset your controlled‐learning pointer
     st.session_state["item_index"] = 0
+
+    # decide next phase
+    if st.session_state["sheet_index"] < len(study_sheets):
+        st.session_state.phase = "controlled"
+    else:
+        st.session_state.phase = "interference"
 
 
 
