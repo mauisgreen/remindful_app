@@ -95,15 +95,26 @@ def introduction():
     st.header("Introduction")
     st.write(
         "You’ll learn 16 words, each tied to a unique category. "
-        "I’ll read each category aloud—then you say the matching word. "
-        "After that we’ll test you three ways: immediate cued recall, free recall, and cued recall."
+        "I’ll read each category aloud—then you speak the matching word. "
+        "After learning, you’ll do three recall trials."
     )
     if st.button("Begin Learning"):
         st.session_state["phase"] = "controlled"
 
-# 1) Display the cue in big text
-    st.markdown(f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
-                unsafe_allow_html=True)
+def controlled_learning():
+    if st.session_state["phase"] != "controlled":
+        return
+
+    sheet_idx = st.session_state["sheet_index"]
+    sheet     = study_sheets[sheet_idx]
+    cues      = list(sheet.keys())
+    cue       = cues[st.session_state["item_index"]]
+
+    # Display the cue here, not in introduction
+    st.markdown(
+        f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
+        unsafe_allow_html=True
+    )
 
     # 2) Browser TTS of the cue
     components.html(
