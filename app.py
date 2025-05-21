@@ -167,37 +167,57 @@ def immediate_cued_recall():
 
     sheet_idx = st.session_state["sheet_index"]
     sheet     = study_sheets[sheet_idx]
-    flags     = st.session_state["imm_correct"].setdefault(sheet_idx, {cue: False for cue in sheet})
+    # one dict per sheet tracking which cues are done
+    flags = st.session_state["imm_correct"].setdefault(
+        sheet_idx, {cue: False for cue in sheet}
+    )
 
+    # Find the next cue not yet flagged
     for cue, word in sheet.items():
         if not flags[cue]:
             st.write(f"🔉 Cue: {cue}")
-            audio_f = record_audio(key=f"imm_{sheet_idx}_{cue}")
+
+            # 1) First pass recording
+            audio_f = record_audio(key=f"imm1_{sheet_idx}_{cue}")
             if audio_f:
-                resp = transcribe_audio(audio_f).strip().lower()
+                try:
+                    resp = transcribe_audio(audio_f).strip().lower()
+                except Exception as e:
+                    st.warning(f"Transcription error: {e}")
+                    return  # bail so user can retry
                 if resp == word.lower():
                     st.success("✅ Correct!")
                     flags[cue] = True
                 else:
-                    # remind per protocol:
+                    # 2) Remind & second-pass
                     speak_text(f"The {cue} was {word}. What was the {cue}?")
-                    retry_f = record_audio(key=f"imm_retry_{sheet_idx}_{cue}")
-                    resp2   = transcribe_audio(retry_f).strip().lower()
-                    if resp2 == word.lower():
-                        st.success("✅ Got it!")
-                        flags[cue] = True
+                    retry_f = record_audio(key=f"imm2_{sheet_idx}_{cue}")
+                    if retry_f:
+                        try:
+                            resp2 = transcribe_audio(retry_f).strip().lower()
+                        except Exception as e:
+                            st.warning(f"Transcription error: {e}")
+                            return
+                        if resp2 == word.lower():
+                            st.success("✅ Got it on retry!")
+                            flags[cue] = True
+                        else:
+                            st.error("Still not right—moving on.")
                     else:
-                        st.error("Still not right—let’s keep going, you’ll get the next ones!")
-            return  # exit so we handle ONE cue at a time
+                        st.error("No retry audio—moving on.")
+            return  # exit so we only handle one cue per run
 
-    # if we reach here, all 4 cues that sheet are correct
-    # advance to next sheet or interference
+    # if we get here, all cues in this sheet are done
     if sheet_idx + 1 < len(study_sheets):
-        st.session_state["sheet_index"] += 1
+        # move to next sheet’s controlled learning
         st.session_state["phase"]        = "controlled"
+        st.session_state["sheet_index"] += 1
     else:
+        # finished all sheets → interference
         st.session_state["phase"] = "interference"
+    # reset the item pointer (so the next phase starts fresh)
     st.session_state["item_index"] = 0
+
 
 
 def interference_phase():
