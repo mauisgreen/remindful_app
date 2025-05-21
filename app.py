@@ -8,6 +8,7 @@ from scripts.audio_handler import record_audio
 from scripts.tts_stt       import speak_text, transcribe_audio
 from scripts.helpers      import chunk_dict
 import streamlit.components.v1 as components
+from rapidfuzz import fuzz
 
 # — SETUP PATHS ————————————————————————————————————————
 BASE_DIR = Path(__file__).parent
@@ -104,7 +105,24 @@ def controlled_learning():
     if st.session_state["phase"] != "controlled":
         return
 
-    # Current sheet & item
+    # Inject CSS for our cards
+    components.html("""
+      <style>
+        .card {
+          border: 2px solid #888;
+          border-radius: 8px;
+          padding: 12px;
+          margin: 8px;
+        }
+        .card .word {
+          font-size: 36px;
+          text-align: center;
+          margin-bottom: 8px;
+        }
+      </style>
+    """, height=0)
+
+    # State for this sheet/item
     idx      = st.session_state["sheet_index"]
     item_idx = st.session_state["item_index"]
     sheet    = study_sheets[idx]
@@ -112,49 +130,48 @@ def controlled_learning():
     cue      = cues[item_idx]
     target   = sheet[cue]
 
-    # Header + Cue display
+    # Header & Cue
     st.header(f"Controlled Learning — Sheet {idx+1} of {len(study_sheets)}")
-    st.markdown(
-        f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
-        unsafe_allow_html=True
-    )
-    # Browser TTS
-    components.html(
-        f"""
-        <script>
-          const msg = new SpeechSynthesisUtterance("The cue is {cue}");
-          window.speechSynthesis.speak(msg);
-        </script>
-        """,
-        height=0,
-    )
+    st.markdown(f"<h2 style='text-align:center;'>Cue: {cue}</h2>", unsafe_allow_html=True)
 
-    # 2×2 grid of words
+    # Browser TTS
+    components.html(f"""
+      <script>
+        const u = new SpeechSynthesisUtterance("Cue: {cue}");
+        window.speechSynthesis.speak(u);
+      </script>
+    """, height=0)
+
+    # 2×2 grid of cards
     words = list(sheet.values())
     cols  = st.columns(2)
     for i, word in enumerate(words):
         with cols[i % 2]:
+            # Card container
             st.markdown(
-                f"<div style='font-size:48px; padding:12px; text-align:center;'>{word}</div>",
+                f"<div class='card'><div class='word'>{word}</div></div>",
                 unsafe_allow_html=True
             )
-            if st.button("Select", key=f"controlled_{idx}_{item_idx}_{i}"):
-                # 1) Record & transcribe
-                audio_f = record_audio(key=f"learn_{idx}_{cue}_{i}")
+            # Select button
+            if st.button("Select", key=f"ctrl_{idx}_{item_idx}_{i}"):
+                # 1) Record + transcribe
+                audio_f = record_audio(key=f"learn_{idx}_{item_idx}_{i}")
+                resp    = ""
                 if audio_f:
                     resp = transcribe_audio(audio_f).strip().lower()
                     st.write(f"**You said:** {resp}")
 
-                # 2) Check click
-                if word == target:
+                # 2) Fuzzy‐match against the target
+                score = fuzz.partial_ratio(resp, target.lower())
+                if score >= 80:
                     st.success("✅ Correct!")
-                    # advance to next item (or into Immediate Recall if that was the last)
+                    # Advance: either next item or into immediate recall
                     st.session_state["item_index"] += 1
                     if st.session_state["item_index"] >= len(cues):
                         st.session_state["phase"] = "immediate"
-                    return  # let Streamlit rerun with new state
+                    return  # Streamlit will rerun with updated state
                 else:
-                    st.error(f"❌ Not quite—correct word was **{target}**.")
+                    st.error(f"❌ That’s not right – correct word was **{target}**.")
                     return
 
 def immediate_cued_recall():
