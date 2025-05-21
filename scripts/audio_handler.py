@@ -28,3 +28,8 @@ def record_audio(key: str):
         return filename
     return None
 """
+
+path = Path("/mnt/data/remindful_app/scripts/audio_handler.py")
+path.write_text(audio_handler_code.strip())
+
+path
