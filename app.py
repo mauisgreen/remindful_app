@@ -104,64 +104,62 @@ def controlled_learning():
     if st.session_state["phase"] != "controlled":
         return
 
-    idx       = st.session_state["sheet_index"]
-    sheet     = study_sheets[idx]
+    # State
+    sheet_idx = st.session_state["sheet_index"]
+    item_idx  = st.session_state["item_index"]
+    sheet     = study_sheets[sheet_idx]
     cues      = list(sheet.keys())
-    cue       = cues[st.session_state["item_index"]]
+    cue       = cues[item_idx]
     target    = sheet[cue]
 
-    # Title and Cue
-    st.header(f"Controlled Learning — Sheet {idx+1} of {len(study_sheets)}")
-    st.markdown(
-        f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
-        unsafe_allow_html=True
-    )
+    # Header + Cue
+    st.header(f"Controlled Learning — Sheet {sheet_idx+1} of {len(study_sheets)}")
+    st.markdown(f"<h2 style='text-align:center;'>The cue is: {cue}</h2>",
+                unsafe_allow_html=True)
 
-    # 2) Browser TTS of the cue
-    components.html(
-        f"""
-        <script>
-          const msg = new SpeechSynthesisUtterance("The cue is {cue}");
-          window.speechSynthesis.speak(msg);
-        </script>
-        """,
-        height=0,
-    )
+    # Browser TTS
+    components.html(f"""
+      <script>
+        const msg = new SpeechSynthesisUtterance("The category is {cue}");
+        window.speechSynthesis.speak(msg);
+      </script>
+    """, height=0)
 
-    # 2×2 grid of words in large font
+    # 2×2 grid
     words = list(sheet.values())
     cols = st.columns(2)
     for i, word in enumerate(words):
         with cols[i % 2]:
-            if st.button(
-                f"<div style='font-size:48px; padding:16px;'>{word}</div>",
-                key=f"sel_{idx}_{i}",
+            st.markdown(
+                f"<div style='font-size:48px; padding:12px; text-align:center;'>{word}</div>",
                 unsafe_allow_html=True
-            ):
-                # When tapped, record audio and transcribe
+            )
+            # Each word gets its own button
+            if st.button("Select", key=f"sel_{sheet_idx}_{item_idx}_{i}"):
+                # 1) Record & transcribe
                 try:
-                    audio_file = record_audio(key=f"learn_{idx}_{cue}_{i}")
-                    if audio_file:
-                        resp = transcribe_audio(audio_file).strip().lower()
-                        st.write(f"**You said:** {resp}")
+                    audio_f = record_audio(key=f"learn_{sheet_idx}_{cue}_{i}")
+                    resp    = transcribe_audio(audio_f).strip().lower() if audio_f else ""
+                    st.write(f"**You said:** {resp}")
                 except Exception as e:
                     st.warning(f"Audio error: {e}")
 
-                # Check the click
+                # 2) Was the click correct?
                 if word == target:
                     st.success("✅ Correct!")
-                    # advance item or sheet
-                    if st.session_state["item_index"] + 1 < len(cues):
-                        st.session_state["item_index"] += 1
-                    else:
+                    # Advance to next item or phase
+                    st.session_state["item_index"] += 1
+                    if st.session_state["item_index"] >= len(cues):
+                        # finished this sheet
                         st.session_state["item_index"] = 0
-                        if idx + 1 < len(study_sheets):
+                        if sheet_idx + 1 < len(study_sheets):
                             st.session_state["sheet_index"] += 1
                         else:
                             st.session_state["phase"] = "immediate"
-                    st.experimental_rerun()
+                    return  # exit so Streamlit reruns with new state
                 else:
-                    st.error(f"❌ That’s not right—the correct word was **{target}**.")
+                    st.error(f"❌ Nope—correct word was **{target}**.")
+                    return  # exit so they see the error before retrying
 
 def immediate_cued_recall():
     if st.session_state["phase"] != "immediate":
