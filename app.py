@@ -24,74 +24,129 @@ if HISTORY_PATH.exists():
         history = json.loads(HISTORY_PATH.read_text())
     except json.JSONDecodeError:
         history = {}
-user_history = history.get(st.session_state.get("user_id", ""), {})
 
-# — PICK NEXT VERSION ————————————————————————————————————
-version_dates = {}
-for v in versions:
-    ts = user_history.get(v, "1970-01-01T00:00:00")
-    version_dates[v] = datetime.fromisoformat(ts)
-selected_version = min(version_dates, key=version_dates.get)
-
-# — LOAD STUDY WORDS ————————————————————————————————————
+# We pick the next version after user logs in, so leave user_id blank for now
+selected_version = versions[0]  # placeholder until login to history
 with open(TESTS_DIR / f"{selected_version}.json") as f:
     study_words  = json.load(f)
 study_sheets = chunk_dict(study_words, 4)
 
 # — INITIALIZE STATE ———————————————————————————————————
 if "phase" not in st.session_state:
-    st.session_state["phase"]               = "introduction"
+    st.session_state["phase"]               = "demographics"  # start here
     st.session_state["sheet_index"]         = 0
     st.session_state["item_index"]          = 0
     st.session_state["imm_correct"]         = {}
     st.session_state["responses_immediate"] = {}
     st.session_state["free_transcript"]     = []
     st.session_state["cued_responses"]      = {}
+    # also placeholders for demographics
+    st.session_state["age"]      = None
+    st.session_state["worry"]    = None
+    st.session_state["why_worry"]= ""
+    st.session_state["research_consent_name"] = ""
+    st.session_state["use_audio"] = False
 
 def setup_demographics_and_consent():
-    """
-    Collect age, worry-level, informed consent, and audio opt-in.
-    """
     st.title("🧠 Remindful Memory Assessment")
     st.write("""
-        This 16-word test is based on the proven FCSRT-IR protocol,
+        This 16-word test is based on a protocol 
         designed to detect early memory changes.
     """)
 
-    age = st.slider("Your age", 18, 100, 30)
-    st.session_state["age"] = age
+    # Age
+    st.subheader("Your Age")
+    st.session_state["age"] = st.slider("Select your age", 18, 100, 30)
 
-    worry = st.radio(
-        "Why are you taking this test today?",
-        ["I am very worried about my memory", "I am not worried about my memory"]
+    # Likert worry scale
+    st.subheader("How worried are you about your memory?")
+    st.session_state["worry"] = st.select_slider(
+        "Select one:",
+        options=[
+            "Not at all worried",
+            "A little worried",
+            "Moderately worried",
+            "Very worried",
+            "Extremely worried"
+        ],
+        value="Moderately worried"
     )
-    st.session_state["worry"] = worry
-
-    consent = st.checkbox(
-        "I consent to have my responses (audio or typed) recorded for scoring."
+    # Optional text
+    st.text_area(
+        "Tell us in your own words why you chose that level (optional):",
+        key="why_worry"
     )
-    st.session_state["consent"] = consent
 
-    if consent:
-        audio_ok = st.checkbox(
-            "I agree to have my spoken answers recorded (recommended for best accuracy)",
-            value=True
-        )
-        st.session_state["use_audio"] = audio_ok
+    # Research consent name
+    st.subheader("Research Consent")
+    st.write("Type your full name below to consent to keeping your data for research purposes:")
+    st.session_state["research_consent_name"] = st.text_input(
+        "Full name", value="", key="research_name"
+    )
 
-        if st.button("Begin Test"):
-            st.session_state["phase"] = "controlled"
-            return True
+    # Informed consent form placeholder
+    st.subheader("Informed Consent Document")
+    with st.expander("Click to view full consent form"):
+        st.write("**[Placeholder for your full informed consent PDF or text]**")
+
+    # Audio opt-in
+    st.subheader("Audio Recording Preference")
+    st.session_state["use_audio"] = st.checkbox(
+        "I agree to have my spoken answers recorded (recommended for accuracy)",
+        value=True
+    )
+
+    # Begin Test
+    if st.button("Begin Test"):
+        # require research consent
+        if not st.session_state["research_consent_name"]:
+            st.error("Please type your full name to consent for research.")
+            return False
+        st.session_state["phase"] = "instructions"
+        return True
 
     return False
 
+def instructions():
+    if st.session_state["phase"] != "instructions":
+        return
+
+    st.header("📋 Instructions")
+
+    # Official FCSRT-IR introduction
+    st.markdown(
+        """
+        **“You will learn 16 words. Each word belongs to a different category.**
+        To help you learn, I will give you category cues and ask you to tell me which word goes with each category cue.  
+        Then you will tell me all the words you can remember, in any order.  
+        When you have recalled as many words as you can, I will give you category cues to help you recall more words.  
+        Then I will remind you of any words you did not recall, to help you recall more words on your next try.  
+        You will have 3 tries to recall the words.”**
+        """
+    )
+
+    st.write("<h2>Please read before starting:</h2>", unsafe_allow_html=True)
+    st.markdown("""
+    1. Turn up your volume so you can hear each cue clearly.  
+    2. You will see category cues one at a time.  
+    3. In the first part of the test when you're learning the words, say the word out loud *and* click your choice. Saying the word out loud will help you remember. 
+    4. In Free & Cued Recall phases, you may **speak** (record) or **type** your answers. Recording is optional.  
+    5. Click **Start Test** when you’re ready.
+    """)
+    if st.button("Start Test"):
+        st.session_state["phase"] = "controlled"
+
 def main():
-    # Step 1: Demographics & consent
-    if st.session_state["phase"] == "introduction":
+    # Demographics & Consent
+    if st.session_state["phase"] == "demographics":
         if not setup_demographics_and_consent():
             return
 
-    # Phase router
+    # Instructions page
+    if st.session_state["phase"] == "instructions":
+        instructions()
+
+    # Test phases
     phase = st.session_state["phase"]
     if phase == "controlled":
         controlled_learning()
@@ -300,7 +355,7 @@ def show_results():
     st.write(f"• Free Recall: {free_score}/16")
     st.write(f"• Cued Recall: {cr_score}/{len(missed)}")
     st.write(f"• Intrusions: {intrusions}")
-    st.write(f"**Overall FCSRT-IR total: {total}/48**")
+    st.write(f"**Overall Remindful Test Score total: {total}/48**")
 
     st.write("### Save Your Results")
     email = st.text_input("Email")
