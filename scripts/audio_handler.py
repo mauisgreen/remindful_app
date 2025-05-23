@@ -4,44 +4,53 @@ from pathlib import Path
 from datetime import datetime
 from pydub import AudioSegment
 
-# Directory to save audio recordings
 AUDIO_DIR = Path(__file__).resolve().parent.parent / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-def record_audio(key: str):
+def record_audio(key: str,
+                 start_label: str = "▶️ Record",
+                 stop_label : str = "⏹️ Stop"):
     """
-    Shows the in-browser recorder and saves the result to a WAV file.
-    Supports raw bytes, numpy-like buffers, and pydub.AudioSegment.
+    Shows an in-browser recorder, streams status to the user,
+    and returns the saved WAV file path (or None if nothing recorded).
     """
-    wav_data = audiorecorder("▶️ Record", "⏹️ Stop", key=key)
+    # 1️⃣  Placeholder for live status messages
+    status = st.empty()
+
+    # 2️⃣  Micro-recorder UI
+    wav_data = audiorecorder(start_label, stop_label, key=key)
+
+    # 3️⃣  No data yet → tell user what to do
     if not wav_data:
+        status.info("Click ▶️ Record, then ⏹️ Stop when you’re done.")
         return None
 
-    filename = AUDIO_DIR / f"recording_{key}_{datetime.now():%Y%m%d_%H%M%S'}.wav"
+    # 4️⃣  Show “processing” while we write to disk
+    status.spinner("Processing your recording…")
+
+    filename = AUDIO_DIR / f"recording_{key}_{datetime.now():%Y%m%d_%H%M%S}.wav"
 
     try:
-        # 1) If it’s already bytes, just dump it
+        # Bytes-like ⇒ save directly
         if isinstance(wav_data, (bytes, bytearray)):
-            with open(filename, "wb") as f:
-                f.write(wav_data)
+            filename.write_bytes(wav_data)
 
-        # 2) If it has tobytes() (numpy arrays, array.array, etc.)
+        # numpy / array ⇒ use tobytes()
         elif hasattr(wav_data, "tobytes"):
-            with open(filename, "wb") as f:
-                f.write(wav_data.tobytes())
+            filename.write_bytes(wav_data.tobytes())
 
-        # 3) If it’s a pydub AudioSegment
+        # pydub.AudioSegment ⇒ export
         elif isinstance(wav_data, AudioSegment):
             wav_data.export(str(filename), format="wav")
 
-        # 4) Last‐ditch fallback: try bytes()
+        # Fallback
         else:
-            with open(filename, "wb") as f:
-                f.write(bytes(wav_data))
+            filename.write_bytes(bytes(wav_data))
 
-        st.success(f"Saved recording: {filename.name}")
+        # 5️⃣  Success cue
+        status.success("✅ Recording saved")
         return filename
 
     except Exception as e:
-        st.error(f"Couldn’t save recording: {e}")
+        status.error(f"❌ Couldn’t save recording: {e}")
         return None
