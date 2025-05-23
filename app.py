@@ -102,38 +102,56 @@ def setup_demographics_and_consent():
         if not st.session_state["research_consent_name"]:
             st.error("Please type your full name to consent for research.")
             return False
-        st.session_state["phase"] = "instructions"
-        return True
-
-    return False
-
-def instructions():
+        def instructions():
+    """Display plain-language, non-plagiarised test instructions."""
     if st.session_state["phase"] != "instructions":
         return
 
-    st.header("📋 Instructions")
+    st.header("📋  Welcome to the Remindful Memory Check")
 
-    # Official FCSRT-IR introduction
     st.markdown(
         """
-        **“You will learn 16 words. Each word belongs to a different category.**
-        To help you learn, I will give you category cues and ask you to tell me which word goes with each category cue.  
-        Then you will tell me all the words you can remember, in any order.  
-        When you have recalled as many words as you can, I will give you category cues to help you recall more words.  
-        Then I will remind you of any words you did not recall, to help you recall more words on your next try.  
-        You will have 3 tries to recall the words.”**
+        In this quick exercise you’ll **learn 16 everyday words** that belong to different
+        categories (for example, a kind of fruit or an item of clothing).  
+        We’ll guide you with gentle hints and then ask you to remember the words—first on
+        your own and later with helpful category clues.
+
+        **How it unfolds**
+
+        1. **Learning rounds** (about 4 minutes)  
+           • Four words will appear on-screen with one category cue.  
+           • Choose the word that fits the cue and *say it out loud* if you can—
+             speaking often strengthens memory.  
+           
+        2. **Quick check**  
+           Right after each set, we’ll give the cue again to see if the word
+           comes back to you.
+
+        3. **Short distraction**  
+           You’ll do a brief counting task so the words can “settle” in memory.
+
+        4. **Free recall** (90 s)  
+           Tell us every word you remember—in any order.  
+           You may type them or record your voice.
+
+        5. **Helpful hints**  
+           For any word you missed, we’ll repeat its category to see if that jogs
+           your memory.
+
+        The whole session usually takes **under ten minutes**.
+
+        ---
+        ### Before you begin
+        * • Find a quiet place and turn your volume up so you can hear the cues.  
+        * • Choose **Record my voice** below if you’re comfortable speaking your answers
+          (typing always works too).  
+        * • There are no right-or-wrong consequences—just do your best.
+
+        When you’re ready, press **Start**.
         """
     )
 
-    st.write("<h2>Please read before starting:</h2>", unsafe_allow_html=True)
-    st.markdown("""
-    1. Turn up your volume so you can hear each cue clearly.  
-    2. You will see category cues one at a time.  
-    3. In the first part of the test when you're learning the words, say the word out loud *and* click your choice. Saying the word out loud will help you remember. 
-    4. In Free & Cued Recall phases, you may **speak** (record) or **type** your answers. Recording is optional.  
-    5. Click **Start Test** when you’re ready.
-    """)
-    if st.button("Start Test"):
+    if st.button("Start"):
         st.session_state["phase"] = "controlled"
 
 def main():
