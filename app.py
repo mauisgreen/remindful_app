@@ -76,7 +76,7 @@ def setup_demographics_and_consent():
 
     # Age
     st.subheader("Your Age")
-    st.session_state["age"] = st.slider("Select your age", 18, 100, 30)
+    st.session_state["age"] = st.slider("Age", 18, 100, 30, format="%d")
 
     # Likert worry scale
     st.subheader("How worried are you about your memory?")
@@ -118,11 +118,13 @@ def setup_demographics_and_consent():
 
     # Begin Test
     if st.button("Begin Test"):
-        # require research consent
         if not st.session_state["research_consent_name"]:
             st.error("Please type your full name to consent for research.")
             return False
-        def instructions():
+        st.session_state["phase"] = "instructions"
+        return True
+    return False 
+def instructions():
     """Display plain-language, non-plagiarised test instructions."""
     if st.session_state["phase"] != "instructions":
         return
@@ -171,7 +173,7 @@ def setup_demographics_and_consent():
         """
     )
 
-    if st.button("Start"):
+    if st.button("Start the Test"):
         st.session_state["phase"] = "controlled"
 def main():
     show_progress()
@@ -353,8 +355,7 @@ def interference_phase():
         st.markdown(
             """
             For the next 20 seconds you’ll see random numbers.  
-            **Press the green Tap button whenever a number *is divisible by 3*.**  
-            This keeps your mind busy before the next memory step.
+            **Press the green Tap button whenever a number is divisible by 3.**  
             """
         )
         if st.button("Begin"):
@@ -367,32 +368,30 @@ def interference_phase():
 
     # ---------- task in-progress ----------
     remaining = (st.session_state["int_end"] - datetime.now()).total_seconds()
+
     if remaining <= 0:
         st.success(f"Time’s up! You caught **{st.session_state['int_hits']}** multiples of 3 🎉")
         if st.button("Continue to Recall"):
-            # clean up distraction state & advance
             for k in ("int_start", "int_end", "int_hits", "int_num"):
                 st.session_state.pop(k, None)
             st.session_state["phase"] = "free_recall"
+            st.experimental_rerun()
         return
 
-    # show or refresh random number
+    # show / refresh random number
     if st.session_state["int_num"] is None or st.button("Next number"):
         st.session_state["int_num"] = random.randint(10, 99)
 
-    st.markdown(f"<h1 style='text-align:center'>{st.session_state['int_num']}</h1>",
-                unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align:center'>{st.session_state['int_num']}</h1>", unsafe_allow_html=True)
 
     # big tap button
     if st.button("✅ Tap", key="tap_btn"):
         if st.session_state["int_num"] % 3 == 0:
             st.session_state["int_hits"] += 1
-        # immediately show a new number
         st.session_state["int_num"] = random.randint(10, 99)
 
     # visual timer bar
     st.progress((20 - remaining) / 20)
-        st.session_state["phase"] = "free_recall"
 
 def free_recall_phase():
     if st.session_state["phase"] != "free_recall":
@@ -402,19 +401,15 @@ def free_recall_phase():
     st.write("Say (or type) all the words you remember.")
 
     if st.session_state.get("use_audio", False):
-        free_f = record_audio(key="free_recall")
-        if free_f:
-            txt = transcribe_audio(free_f)
+        audio_file = record_audio(key="free_recall")
+        if audio_file:
+            txt = transcribe_audio(audio_file)
             st.session_state["free_transcript"] = txt.split()
             st.write("You said:", st.session_state["free_transcript"])
     else:
-        txt = st.text_area(
-            "Type remembered words, separated by commas:"
-        )
+        txt = st.text_area("Type remembered words, separated by commas:", height=220)
         if txt:
-            st.session_state["free_transcript"] = [
-                w.strip() for w in txt.split(",") if w.strip()
-            ]
+            st.session_state["free_transcript"] = [w.strip() for w in txt.split(",") if w.strip()]
 
     if st.button("Done Free Recall"):
         st.session_state["phase"] = "cued_recall"
@@ -475,32 +470,32 @@ def show_results():
 
     st.header("Your Memory Snapshot")
 
-cols = st.columns(2)
-with cols[0]:
-    st.metric("Immediate recall", f"{imm_score} / 16")
-    st.metric("Free recall",      f"{free_score} / 16")
-with cols[1]:
-    st.metric("Cued recall",      f"{cr_score} / {len(missed)}")
-    st.metric("Intrusions",       intrusions)
-
-st.subheader("What do these numbers mean?")
-st.write(
-    """
-    • Most healthy adults score **10–14** on free recall and improve with cues.  
-    • Intrusions (words that weren't on the list) are common; one or two is normal.  
-    • If you are concerned about your memory, share these results with a healthcare
-      professional—they can place them in the context of a full assessment.
-    """
-)
-
-st.download_button("📥 Download my results", data=str({
-        "immediate": imm_score,
-        "free": free_score,
-        "cued": cr_score,
-        "intrusions": intrusions,
-        "total": total
-    }),
-    file_name="Remindful_results.txt")
-
+    cols = st.columns(2)
+    with cols[0]:
+        st.metric("Immediate recall", f"{imm_score} / 16")
+        st.metric("Free recall",      f"{free_score} / 16")
+    with cols[1]:
+        st.metric("Cued recall",      f"{cr_score} / {len(missed)}")
+        st.metric("Intrusions",       intrusions)
+    
+    st.subheader("What do these numbers mean?")
+    st.write(
+        """
+        • Most healthy adults score **10–14** on free recall and improve with cues.  
+        • Intrusions (words that weren't on the list) are common; one or two is normal.  
+        • If you are concerned about your memory, share these results with a healthcare
+          professional—they can place them in the context of a full assessment.
+        """
+    )
+    
+    st.download_button("📥 Download my results", data=str({
+            "immediate": imm_score,
+            "free": free_score,
+            "cued": cr_score,
+            "intrusions": intrusions,
+            "total": total
+        }),
+        file_name="Remindful_results.txt")
+    
 if __name__ == "__main__":
     main()
