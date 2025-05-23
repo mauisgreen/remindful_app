@@ -12,21 +12,19 @@ def record_audio(key: str,
                  stop_label : str = "⏹️ Stop"):
     """
     Shows an in-browser recorder, streams status to the user,
-    and returns the saved WAV file path (or None if nothing recorded).
+    and returns the saved WAV file path (or None).
     """
-    # 1️⃣  Placeholder for live status messages
     status = st.empty()
-
-    # 2️⃣  Micro-recorder UI
     wav_data = audiorecorder(start_label, stop_label, key=key)
 
-    # 3️⃣  No data yet → tell user what to do
     if not wav_data:
-        status.info("Click ▶️ Record, then ⏹️ Stop when you’re done.")
+        status.info("Click ▶️ Record, then ⏹️ Stop when done.")
         return None
 
-    # 4️⃣  Show “processing” while we write to disk
-    status.spinner("Processing your recording…")
+    with status.container():
+        st.spinner("Processing your recording…")
+
+    ...
 
     filename = AUDIO_DIR / f"recording_{key}_{datetime.now():%Y%m%d_%H%M%S}.wav"
 
