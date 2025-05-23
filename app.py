@@ -2,7 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
 from scripts.scoring       import score_responses
 from scripts.timer         import countdown, countdown_seconds
 from scripts.audio_handler import record_audio
@@ -280,13 +281,56 @@ def immediate_cued_recall():
         st.session_state["phase"] = "interference"
 
 def interference_phase():
+    """Interactive distraction task: tap when the number is a multiple of 3."""
     if st.session_state["phase"] != "interference":
         return
 
-    st.header("Interference")
-    st.write("Count down by 3’s from 97 for 20 seconds.")
-    if st.button("Start Interference"):
-        countdown_seconds(20)
+    st.header("🧩 Distraction Round (20 s)")
+
+    # ---------- first visit ----------
+    if "int_start" not in st.session_state:
+        st.markdown(
+            """
+            For the next 20 seconds you’ll see random numbers.  
+            **Press the green Tap button whenever a number *is divisible by 3*.**  
+            This keeps your mind busy before the next memory step.
+            """
+        )
+        if st.button("Begin"):
+            st.session_state["int_start"] = datetime.now()
+            st.session_state["int_end"]   = st.session_state["int_start"] + timedelta(seconds=20)
+            st.session_state["int_hits"]  = 0
+            st.session_state["int_num"]   = None
+            st.experimental_rerun()
+        return
+
+    # ---------- task in-progress ----------
+    remaining = (st.session_state["int_end"] - datetime.now()).total_seconds()
+    if remaining <= 0:
+        st.success(f"Time’s up! You caught **{st.session_state['int_hits']}** multiples of 3 🎉")
+        if st.button("Continue to Recall"):
+            # clean up distraction state & advance
+            for k in ("int_start", "int_end", "int_hits", "int_num"):
+                st.session_state.pop(k, None)
+            st.session_state["phase"] = "free_recall"
+        return
+
+    # show or refresh random number
+    if st.session_state["int_num"] is None or st.button("Next number"):
+        st.session_state["int_num"] = random.randint(10, 99)
+
+    st.markdown(f"<h1 style='text-align:center'>{st.session_state['int_num']}</h1>",
+                unsafe_allow_html=True)
+
+    # big tap button
+    if st.button("✅ Tap", key="tap_btn"):
+        if st.session_state["int_num"] % 3 == 0:
+            st.session_state["int_hits"] += 1
+        # immediately show a new number
+        st.session_state["int_num"] = random.randint(10, 99)
+
+    # visual timer bar
+    st.progress((20 - remaining) / 20)
         st.session_state["phase"] = "free_recall"
 
 def free_recall_phase():
