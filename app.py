@@ -9,7 +9,26 @@ from scripts.timer         import countdown, countdown_seconds
 from scripts.audio_handler import record_audio
 from scripts.tts_stt        import speak_text, transcribe_audio
 from scripts.helpers       import chunk_dict
+import time
 
+def show_progress():
+    phase_order = ["demographics", "instructions", "controlled", "immediate",
+                   "interference", "free_recall", "cued_recall", "results"]
+    current = phase_order.index(st.session_state["phase"])
+    st.progress(current / (len(phase_order) - 1))
+
+def inject_big_button_css():
+    st.markdown(
+        """
+        <style>
+        button[kind="primary"]  {font-size: 24px !important; padding: 14px 24px;}
+        button[kind="secondary"]{font-size: 22px !important; padding: 12px 22px;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+inject_big_button_css()
 # — SETUP PATHS ————————————————————————————————————————
 BASE_DIR     = Path(__file__).parent
 TESTS_DIR    = BASE_DIR / "tests"
@@ -154,8 +173,8 @@ def setup_demographics_and_consent():
 
     if st.button("Start"):
         st.session_state["phase"] = "controlled"
-
 def main():
+    show_progress()
     # Demographics & Consent
     if st.session_state["phase"] == "demographics":
         if not setup_demographics_and_consent():
@@ -237,48 +256,90 @@ def controlled_learning():
                     return
 
 def immediate_cued_recall():
+    """
+    One–cue-at-a-time immediate recall round, run after every 4-word sheet.
+
+    • Plays the category cue aloud (if TTS available).  
+    • Waits ~1.2 s so the microphone opens cleanly.  
+    • Records the participant’s spoken or typed response.  
+    • If wrong, the cue + target word are spoken once and the user
+      gets one more chance.  
+    """
     if st.session_state["phase"] != "immediate":
         return
 
-    idx   = st.session_state["sheet_index"]
-    sheet = study_sheets[idx]
+    idx      = st.session_state["sheet_index"]         # which 4-word set
+    sheet    = study_sheets[idx]                       # dict {cue: word}
+    progress = st.empty()                              # live cue counter
+
+    # Create tracker for this sheet if first visit
     flags = st.session_state["imm_correct"].setdefault(
         idx, {cue: False for cue in sheet}
     )
 
+    # ---- loop over cues until we hit an un-answered one ----
     for cue, word in sheet.items():
-        if not flags[cue]:
-            st.write(f"🔉 Cue: {cue}")
-            if st.session_state.get("use_audio", False):
-                audio = record_audio(key=f"imm1_{idx}_{cue}")
-                if audio:
-                    try:
-                        resp = transcribe_audio(audio).strip().lower()
-                        if resp == word.lower():
-                            st.success("✅ Correct!")
-                            flags[cue] = True
-                        else:
-                            speak_text(f"The {cue} was {word}. What was the {cue}?")
-                            retry = record_audio(key=f"imm2_{idx}_{cue}")
-                            if retry and transcribe_audio(retry).strip().lower() == word.lower():
-                                st.success("✅ Got it on retry!")
-                                flags[cue] = True
-                            else:
-                                st.error("Still not right—moving on.")
-                    except Exception as e:
-                        st.warning(f"Transcription error: {e}")
-            else:
-                # skip recording if opted out
-                st.info("Click Record to speak or skip if typing.")
-            return
+        if flags[cue]:                                 # already correct
+            continue
 
-    # all done for this sheet → advance
+        # progress bar inside the immediate round (0–4)
+        done = sum(flags.values())
+        progress.progress(done / len(sheet),
+                          text=f"Immediate recall {done}/{len(sheet)}")
+
+        # 1️⃣  Speak cue
+        speak_text(f"The category is {cue}.")
+        time.sleep(1.2)                                # let TTS finish
+
+        # 2️⃣  Ask for response (audio or text)
+        st.markdown(f"### What was the **{cue}**?")
+        if st.session_state.get("use_audio", False):
+            audio = record_audio(key=f"imm1_{idx}_{cue}")
+            if not audio:
+                return                                  # user still recording
+            response = transcribe_audio(audio).strip().lower()
+        else:
+            response = st.text_input("Type your answer:", key=f"imm1_{idx}_{cue}").strip().lower()
+            if not response:
+                return
+
+        # 3️⃣  Check answer
+        if response == word.lower():
+            st.success("✅ Correct!")
+            flags[cue] = True
+        else:
+            # offer one guided retry
+            st.warning("Almost! Let’s try that cue again.")
+            speak_text(f"The correct answer was {word}. Now, what was the {cue}?")
+            time.sleep(1.2)
+
+            if st.session_state.get("use_audio", False):
+                retry_audio = record_audio(key=f"imm2_{idx}_{cue}")
+                if not retry_audio:
+                    return
+                retry_resp = transcribe_audio(retry_audio).strip().lower()
+            else:
+                retry_resp = st.text_input("One more try:", key=f"imm2_{idx}_{cue}").strip().lower()
+                if not retry_resp:
+                    return
+
+            if retry_resp == word.lower():
+                st.success("✅ Got it on the retry!")
+                flags[cue] = True
+            else:
+                st.error(f"❌ We’ll move on. The word was **{word}**.")
+                flags[cue] = True        # mark as finished, even if missed
+
+        st.divider()                     # visual separation between cues
+        return                           # render next cue on next rerun
+
+    # ---- all 4 cues handled → proceed ----
     st.session_state["sheet_index"] += 1
     st.session_state["item_index"]   = 0
     if st.session_state["sheet_index"] < len(study_sheets):
-        st.session_state["phase"] = "controlled"
+        st.session_state["phase"] = "controlled"       # next learning sheet
     else:
-        st.session_state["phase"] = "interference"
+        st.session_state["phase"] = "interference"     # go to distraction
 
 def interference_phase():
     """Interactive distraction task: tap when the number is a multiple of 3."""
@@ -412,18 +473,34 @@ def show_results():
 
     total = imm_score + free_score + cr_score
 
-    st.header("Final Score")
-    st.write(f"• Immediate Recall: {imm_score}/16")
-    st.write(f"• Free Recall: {free_score}/16")
-    st.write(f"• Cued Recall: {cr_score}/{len(missed)}")
-    st.write(f"• Intrusions: {intrusions}")
-    st.write(f"**Overall Remindful Test Score total: {total}/48**")
+    st.header("Your Memory Snapshot")
 
-    st.write("### Save Your Results")
-    email = st.text_input("Email")
-    pw    = st.text_input("Password", type="password")
-    if st.button("Save My Results"):
-        st.success("✅ Results saved! Thank you.")
+cols = st.columns(2)
+with cols[0]:
+    st.metric("Immediate recall", f"{imm_score} / 16")
+    st.metric("Free recall",      f"{free_score} / 16")
+with cols[1]:
+    st.metric("Cued recall",      f"{cr_score} / {len(missed)}")
+    st.metric("Intrusions",       intrusions)
+
+st.subheader("What do these numbers mean?")
+st.write(
+    """
+    • Most healthy adults score **10–14** on free recall and improve with cues.  
+    • Intrusions (words that weren't on the list) are common; one or two is normal.  
+    • If you are concerned about your memory, share these results with a healthcare
+      professional—they can place them in the context of a full assessment.
+    """
+)
+
+st.download_button("📥 Download my results", data=str({
+        "immediate": imm_score,
+        "free": free_score,
+        "cued": cr_score,
+        "intrusions": intrusions,
+        "total": total
+    }),
+    file_name="Remindful_results.txt")
 
 if __name__ == "__main__":
     main()
