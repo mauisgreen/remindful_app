@@ -220,15 +220,20 @@ def controlled_learning():
       </style>
     """, height=0)
 
+    # at start of controlled_learning()
+    cue_key = f"spoken_{idx}_{item_idx}"
+    if not st.session_state.get(cue_key):
+        components.html(f"""
+            <script>
+              const msg = new SpeechSynthesisUtterance("The Category is: {cue}");
+              window.speechSynthesis.speak(msg);
+            </script>
+        """, height=0)
+        st.session_state[cue_key] = True
+
     # Header & Cue
     st.header(f"Controlled Learning — Sheet {idx+1} of {len(study_sheets)}")
     st.markdown(f"<h2 style='text-align:center;'>Cue: {cue}</h2>", unsafe_allow_html=True)
-    components.html(f"""
-      <script>
-        const msg = new SpeechSynthesisUtterance("Cue: {cue}");
-        window.speechSynthesis.speak(msg);
-      </script>
-    """, height=0)
 
     # 2×2 grid of word-cards
     words = list(sheet.values())
@@ -242,10 +247,11 @@ def controlled_learning():
             if st.button("Select", key=f"ctrl_{idx}_{item_idx}_{i}"):
                 # Record if opted in
                 if st.session_state.get("use_audio", False):
-                    audio_f = record_audio(key=f"learn_{idx}_{item_idx}_{i}")
-                    if audio_f:
-                        resp = transcribe_audio(audio_f).strip().lower()
-                        st.write(f"**You said:** {resp}")
+                    st.info("Press Record and say the matching word, then click its card.")
+                    audio_learn = record_audio(key=f"learn_pre_{idx}_{item_idx}")
+                    if audio_learn:
+                        said = transcribe_audio(audio_learn).strip().lower()
+                        st.write(f"You said: **{said}**")
                 # Check click
                 if word == target:
                     st.success("✅ Correct!")
@@ -258,90 +264,78 @@ def controlled_learning():
                     return
 
 def immediate_cued_recall():
-    """
-    One–cue-at-a-time immediate recall round, run after every 4-word sheet.
-
-    • Plays the category cue aloud (if TTS available).  
-    • Waits ~1.2 s so the microphone opens cleanly.  
-    • Records the participant’s spoken or typed response.  
-    • If wrong, the cue + target word are spoken once and the user
-      gets one more chance.  
-    """
+    """Single-cue immediate recall with optional audio, one retry allowed."""
     if st.session_state["phase"] != "immediate":
         return
 
-    idx      = st.session_state["sheet_index"]         # which 4-word set
-    sheet    = study_sheets[idx]                       # dict {cue: word}
-    progress = st.empty()                              # live cue counter
+    idx   = st.session_state["sheet_index"]     # 0-based sheet number
+    sheet = study_sheets[idx]                   # {cue: word}
 
-    # Create tracker for this sheet if first visit
+    # --- create / fetch per-sheet correctness tracker ------------------
     flags = st.session_state["imm_correct"].setdefault(
         idx, {cue: False for cue in sheet}
     )
 
-    # ---- loop over cues until we hit an un-answered one ----
-    for cue, word in sheet.items():
-        if flags[cue]:                                 # already correct
-            continue
+    # --- pick the first cue still unanswered --------------------------
+    try:
+        cue, word = next((c, w) for c, w in sheet.items() if not flags[c])
+    except StopIteration:
+        # All four cues done → move on
+        st.session_state["sheet_index"] += 1
+        st.session_state["item_index"] = 0
+        st.session_state["phase"] = "controlled" if st.session_state["sheet_index"] < len(study_sheets) else "interference"
+        st.experimental_rerun()
+        return
 
-        # progress bar inside the immediate round (0–4)
-        done = sum(flags.values())
-        progress.progress(done / len(sheet),
-                          text=f"Immediate recall {done}/{len(sheet)}")
+    # ------------------------------------------------------------------
+    st.header(f"Immediate Recall — Sheet {idx+1}/{len(study_sheets)}")
+    done = sum(flags.values())
+    st.progress(done/4, text=f"{done}/4 cues finished")
 
-        # 1️⃣  Speak cue
+    # --- speak cue only once ------------------------------------------
+    spoken_key = f"imm_spoken_{idx}_{cue}"
+    if not st.session_state.get(spoken_key):
         speak_text(f"The category is {cue}.")
-        time.sleep(1.2)                                # let TTS finish
+        time.sleep(1.2)  # ensure mic is free
+        st.session_state[spoken_key] = True
 
-        # 2️⃣  Ask for response (audio or text)
-        st.markdown(f"### What was the **{cue}**?")
-        if st.session_state.get("use_audio", False):
-            audio = record_audio(key=f"imm1_{idx}_{cue}")
-            if not audio:
-                return                                  # user still recording
-            response = transcribe_audio(audio).strip().lower()
-        else:
-            response = st.text_input("Type your answer:", key=f"imm1_{idx}_{cue}").strip().lower()
-            if not response:
-                return
+    st.markdown(f"### What was the **{cue}**?")
 
-        # 3️⃣  Check answer
+    # --- gather typed or spoken answer --------------------------------
+    typed = st.text_input("Type here (or leave blank if recording):",
+                          key=f"imm_type_{idx}_{cue}")
+    audio_resp = None
+    if st.session_state.get("use_audio", False):
+        audio_file = record_audio(key=f"imm_audio_{idx}_{cue}")
+        if audio_file:
+            audio_resp = transcribe_audio(audio_file).strip().lower()
+            st.write(f"You said: **{audio_resp}**")
+
+    # Flag to know whether we've already offered a retry
+    retry_flag = st.session_state.get(f"imm_retry_{idx}_{cue}", False)
+
+    if st.button("Next", key=f"imm_next_{idx}_{cue}"):
+        response = (audio_resp or typed).strip().lower()
+        if not response:
+            st.warning("Please type or say a word before continuing.")
+            st.stop()
+
         if response == word.lower():
             st.success("✅ Correct!")
             flags[cue] = True
+            st.experimental_rerun()
+
+        if not retry_flag:
+            # first miss → give guided retry
+            st.session_state[f"imm_retry_{idx}_{cue}"] = True
+            speak_text(f"The correct answer was {word}. Let's try again. What was the {cue}?")
+            st.experimental_rerun()
         else:
-            # offer one guided retry
-            st.warning("Almost! Let’s try that cue again.")
-            speak_text(f"The correct answer was {word}. Now, what was the {cue}?")
-            time.sleep(1.2)
+            # second miss → mark finished and move on
+            st.error(f"❌ We'll move on. The word was **{word}**.")
+            flags[cue] = True
+            st.experimental_rerun()
 
-            if st.session_state.get("use_audio", False):
-                retry_audio = record_audio(key=f"imm2_{idx}_{cue}")
-                if not retry_audio:
-                    return
-                retry_resp = transcribe_audio(retry_audio).strip().lower()
-            else:
-                retry_resp = st.text_input("One more try:", key=f"imm2_{idx}_{cue}").strip().lower()
-                if not retry_resp:
-                    return
-
-            if retry_resp == word.lower():
-                st.success("✅ Got it on the retry!")
-                flags[cue] = True
-            else:
-                st.error(f"❌ We’ll move on. The word was **{word}**.")
-                flags[cue] = True        # mark as finished, even if missed
-
-        st.divider()                     # visual separation between cues
-        return                           # render next cue on next rerun
-
-    # ---- all 4 cues handled → proceed ----
-    st.session_state["sheet_index"] += 1
-    st.session_state["item_index"]   = 0
-    if st.session_state["sheet_index"] < len(study_sheets):
-        st.session_state["phase"] = "controlled"       # next learning sheet
-    else:
-        st.session_state["phase"] = "interference"     # go to distraction
 
 def interference_phase():
     """Interactive distraction task: tap when the number is a multiple of 3."""
@@ -415,27 +409,47 @@ def free_recall_phase():
         st.session_state["phase"] = "cued_recall"
 
 def cued_recall_phase():
+    """Final cued recall — typed or spoken answer with Next button."""
     if st.session_state["phase"] != "cued_recall":
         return
 
-    st.header("Cued Recall")
-    free_set = set(w.lower() for w in st.session_state["free_transcript"])
-    missed   = {
-        cue: word for cue, word in study_words.items()
-        if word.lower() not in free_set
-    }
+    # figure out which cue we’re on
+    if "cue_iter" not in st.session_state:
+        st.session_state["cue_iter"] = iter([
+            (cue, word) for cue, word in study_words.items()
+            if word.lower() not in
+               {w.lower() for w in st.session_state["free_transcript"]}
+        ])
 
-    for cue, word in missed.items():
-        st.write(f"🔉 Cue: {cue}")
-        if st.session_state.get("use_audio", False):
-            audio_f = record_audio(key=f"cue_{cue}")
-            if audio_f:
-                resp = transcribe_audio(audio_f).strip().lower()
-                st.session_state["cued_responses"][cue] = resp
-        else:
-            resp = st.text_input(f"What was the {cue}?", key=f"text_{cue}")
-            if resp:
-                st.session_state["cued_responses"][cue] = resp.strip().lower()
+    try:
+        cue, word = st.session_state.get("current_cue", next(st.session_state["cue_iter"]))
+        st.session_state["current_cue"] = (cue, word)
+    except StopIteration:
+        # all cues handled → results
+        st.session_state.pop("cue_iter", None)
+        st.session_state.pop("current_cue", None)
+        st.session_state["phase"] = "results"
+        st.experimental_rerun()
+        return
+
+    st.header("Cued Recall")
+    st.markdown(f"### What was the **{cue}**?")
+
+    typed = st.text_input("Type here (optional):", key=f"cr_type_{cue}")
+    audio_resp = None
+    if st.session_state.get("use_audio", False):
+        audio_file = record_audio(key=f"cr_audio_{cue}")
+        if audio_file:
+            audio_resp = transcribe_audio(audio_file).strip().lower()
+            st.write(f"You said: **{audio_resp}**")
+
+    if st.button("Next", key=f"cr_next_{cue}"):
+        response = (audio_resp or typed).strip().lower()
+        # store even blank to mark progression
+        st.session_state["cued_responses"][cue] = response
+        # proceed to next cue
+        st.session_state.pop("current_cue", None)
+        st.experimental_rerun()
 
     if st.button("See Results"):
         st.session_state["phase"] = "results"
